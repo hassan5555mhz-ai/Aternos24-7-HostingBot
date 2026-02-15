@@ -333,9 +333,9 @@ function addInterval(callback, delay) {
 }
 
 function getReconnectDelay() {
-  // Aggressive reconnection: fast, flat delay or very subtle backoff
-  const baseDelay = config.utils['auto-reconnect-delay'] || 2000;
-  const maxDelay = config.utils['max-reconnect-delay'] || 15000;
+  // Aggressive reconnection: 1-10 seconds as requested
+  const baseDelay = 1000;
+  const maxDelay = 10000;
 
   // Use a much gentler backoff or just a flat delay if user wants "lower"
   // Current logic: attempts * 1000 + base, capped at max
@@ -374,10 +374,13 @@ function createBot() {
       port: config.server.port,
       version: config.server.version,
       hideErrors: false,
-      checkTimeoutInterval: 120000 // 2 minutes - detects dead connections without false-positive disconnects
+      checkTimeoutInterval: 300000 // 5 minutes - extra tolerance for laggy Aternos servers
     });
 
     bot.loadPlugin(pathfinder);
+
+    // Setup enhanced Leave/Rejoin logic (Session rotation to evade Aternos detection)
+    setupLeaveRejoin(bot, createBot);
 
     // Connection timeout - if no spawn in 60s, reconnect
     const connectionTimeout = setTimeout(() => {
@@ -408,9 +411,6 @@ function createBot() {
 
       // Start all modules
       initializeModules(bot, mcData, defaultMove);
-
-      // Setup enhanced Leave/Rejoin logic
-      setupLeaveRejoin(bot, createBot);
 
       // Attempt creative mode (only works if bot has OP)
       setTimeout(() => {

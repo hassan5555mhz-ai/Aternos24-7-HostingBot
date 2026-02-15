@@ -1,118 +1,142 @@
+/**
+ * leaveRejoin.js
+ * 
+ * This module handles "Session Rotation" for the AFK bot.
+ * It makes the bot leave every hour and then rejoin.
+ * This helps evade Aternos server-level bot detection.
+ * 
+ * Enhanced with "Human-like" behaviors: Arm swinging, Hotbar cycling,
+ * Teabagging, and Inventory re-sorting.
+ */
+
 function randomMs(minMs, maxMs) {
-    return Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs
+    return Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
 }
 
 function setupLeaveRejoin(bot, createBot) {
-    // Timers
-    let leaveTimer = null
-    let jumpTimer = null
-    let jumpOffTimer = null
-    let reconnectTimer = null
-
-    // State
-    let stopped = false
-    let reconnectAttempts = 0
-    let lastLogAt = 0
-
-    function logThrottled(msg, minGapMs = 2000) {
-        const now = Date.now()
-        if (now - lastLogAt >= minGapMs) {
-            lastLogAt = now
-            console.log(msg)
-        }
-    }
+    let leaveTimer = null;
+    let jumpTimer = null;
+    let jumpOffTimer = null;
+    let swingTimer = null;
+    let hotbarTimer = null;
+    let teabagTimer = null;
+    let resortTimer = null;
+    let stopped = false;
 
     function cleanup() {
-        stopped = true
-        if (leaveTimer) clearTimeout(leaveTimer)
-        if (jumpTimer) clearTimeout(jumpTimer)
-        if (jumpOffTimer) clearTimeout(jumpOffTimer)
-        if (reconnectTimer) clearTimeout(reconnectTimer)
-        leaveTimer = jumpTimer = jumpOffTimer = reconnectTimer = null
+        stopped = true;
+        const timers = [leaveTimer, jumpTimer, jumpOffTimer, swingTimer, hotbarTimer, teabagTimer, resortTimer];
+        timers.forEach(t => { if (t) clearTimeout(t); });
+        leaveTimer = jumpTimer = jumpOffTimer = swingTimer = hotbarTimer = teabagTimer = resortTimer = null;
     }
 
+    // --- RANDOM JUMPING (AFK Plugin evasion) ---
     function scheduleNextJump() {
-        if (stopped || !bot.entity) return
-
-        bot.setControlState('jump', true)
+        if (stopped || !bot.entity) return;
+        bot.setControlState('jump', true);
         jumpOffTimer = setTimeout(() => {
-            bot.setControlState('jump', false)
-        }, 300)
-
-        // random jump 20s -> 5m
-        const nextJump = randomMs(20000, 5 * 60 * 1000)
-        jumpTimer = setTimeout(scheduleNextJump, nextJump)
+            if (!stopped && bot.setControlState) bot.setControlState('jump', false);
+        }, 300);
+        const nextJump = randomMs(20000, 300000);
+        jumpTimer = setTimeout(scheduleNextJump, nextJump);
     }
 
-    function scheduleReconnect(reason = 'end') {
-        if (stopped) return
+    // --- ARM SWINGING (Fidget) ---
+    function scheduleArmSwing() {
+        if (stopped) return;
+        try {
+            bot.swingArm();
+        } catch (e) { }
+        const nextSwing = randomMs(10000, 60000);
+        swingTimer = setTimeout(scheduleArmSwing, nextSwing);
+    }
 
-        // FAST RECONNECT: 2s -> 10s (User requested faster)
-        let delay = randomMs(2000, 10000)
+    // --- HOTBAR CYCLING ---
+    function scheduleHotbarCycle() {
+        if (stopped) return;
+        try {
+            const slot = Math.floor(Math.random() * 9);
+            bot.setQuickBarSlot(slot);
+        } catch (e) { }
+        const nextCycle = randomMs(30000, 120000);
+        hotbarTimer = setTimeout(scheduleHotbarCycle, nextCycle);
+    }
 
-        // Slight backoff for repeated failures, but keep it snappy
-        reconnectAttempts++
-        if (reconnectAttempts > 3) {
-            delay += 5000 // Add 5s if it's failing a lot
+    // --- TEABAGGING (Rapid Sneaking) ---
+    function scheduleTeabagging() {
+        if (stopped) return;
+
+        const performTeabag = (count) => {
+            if (stopped || count <= 0) {
+                if (!stopped) bot.setControlState('sneak', false);
+                return;
+            }
+            bot.setControlState('sneak', true);
+            setTimeout(() => {
+                bot.setControlState('sneak', false);
+                setTimeout(() => performTeabag(count - 1), 150);
+            }, 150);
+        };
+
+        // 10% chance to teabag every 2-5 minutes
+        if (Math.random() > 0.9) {
+            performTeabag(randomMs(2, 5));
         }
 
-        // Cap at 30s max
-        delay = Math.min(delay, 15000)
-
-        logThrottled(`[AFK] Rejoin scheduled in ${Math.round(delay / 1000)}s (reason: ${reason}, attempt: ${reconnectAttempts})`)
-
-        reconnectTimer = setTimeout(() => {
-            if (stopped) return
-            try {
-                if (typeof createBot === 'function') createBot()
-            } catch (e) {
-                console.log('[AFK] createBot error:', e?.message || e)
-                scheduleReconnect('createBot-error')
-            }
-        }, delay)
+        const nextTeabagCheck = randomMs(120000, 300000);
+        teabagTimer = setTimeout(scheduleTeabagging, nextTeabagCheck);
     }
 
-    bot.once('spawn', () => {
-        // reset attempt counter on successful connect
-        reconnectAttempts = 0
+    // --- INVENTORY RE-SORTING ---
+    async function scheduleInventoryResort() {
+        if (stopped) return;
+        try {
+            const items = bot.inventory.items();
+            if (items.length >= 2) {
+                // Pick two random items/slots and swap them
+                const slotA = items[Math.floor(Math.random() * items.length)].slot;
+                const slotB = Math.floor(Math.random() * 36) + 9; // Random inventory slot
 
-        // clear any old timers
-        cleanup()
-        stopped = false
-
-        // Stay connected: 2 minutes -> 15 minutes (More realistic AFK behavior)
-        // Stay connected 1-5 minutes before a scheduled leave/rejoin cycle.
-        const stayTime = randomMs(60000, 300000)
-
-        logThrottled(`[AFK] Will leave in ${Math.round(stayTime / 1000)} seconds`)
-
-        scheduleNextJump()
-
-        leaveTimer = setTimeout(() => {
-            if (stopped) return
-            logThrottled('[AFK] Leaving server (timer)')
-            cleanup()
-            try {
-                bot.quit()
-            } catch (e) {
-                // ignore if already closed
+                await bot.clickWindow(slotA, 0, 0);
+                await bot.clickWindow(slotB, 0, 0);
+                await bot.clickWindow(slotA, 0, 0);
             }
-        }, stayTime)
-    })
+        } catch (e) { }
 
-    // When the connection ends for ANY reason, just clean up our timers.
-    // Reconnection is handled by index.js — no duplicate reconnect here.
-    bot.on('end', () => {
-        cleanup()
-    })
+        const nextResort = randomMs(300000, 900000); // Every 5-15 minutes
+        resortTimer = setTimeout(scheduleInventoryResort, nextResort);
+    }
 
-    bot.on('kicked', () => {
-        cleanup()
-    })
+    // --- SESSION ROTATION ---
 
-    bot.on('error', () => {
-        cleanup()
-    })
+    // reset state
+    cleanup();
+    stopped = false;
+
+    // STAY TIME: Approx 1 hour (55-65 mins for variance)
+    const stayTime = randomMs(55 * 60 * 1000, 65 * 60 * 1000);
+    console.log(`[AFK] Session started. Next rotation in ${Math.round(stayTime / 60000)} minutes.`);
+
+    // Start all behaviors
+    scheduleNextJump();
+    scheduleArmSwing();
+    scheduleHotbarCycle();
+    scheduleTeabagging();
+    scheduleInventoryResort();
+
+    leaveTimer = setTimeout(() => {
+        if (stopped) return;
+        console.log('[AFK] Rotating session (leaving server)...');
+        cleanup();
+        try {
+            bot.quit();
+        } catch (e) { }
+    }, stayTime);
+
+    // Cleanup on disconnect
+    bot.on('end', cleanup);
+    bot.on('kicked', cleanup);
+    bot.on('error', cleanup);
 }
 
-module.exports = setupLeaveRejoin
+module.exports = setupLeaveRejoin;
