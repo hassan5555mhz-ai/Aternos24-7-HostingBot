@@ -6,8 +6,8 @@
     "type": "offline"
   },
   "server": {
-    "ip": "7L_SMP_is_real.aternos.me",
-    "port": 62213,
+    "ip": "DETHCORE20.aternos.me:30566",
+    "port": 30566,
     "version": "",
     "try-creative": false
   },
