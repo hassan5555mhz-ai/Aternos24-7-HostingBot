@@ -6,7 +6,7 @@
     "type": "offline"
   },
   "server": {
-    "ip": "DETHCORE20.aternos.me:30566",
+    "ip": "DETHCORE20.aternos.me",
     "port": 30566,
     "version": "",
     "try-creative": false
